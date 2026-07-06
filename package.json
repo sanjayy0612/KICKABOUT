@@ -11,6 +11,12 @@
   "dependencies": {
     "@fontsource/baskervville": "^5.2.9",
     "@fontsource/space-grotesk": "^5.2.10",
+    "autobase": "^7.28.1",
+    "b4a": "^1.8.1",
+    "corestore": "^7.11.0",
+    "hypercore": "^11.33.5",
+    "hypercore-crypto": "^3.7.0",
+    "hyperswarm": "^4.17.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
