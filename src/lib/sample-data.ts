@@ -12,7 +12,7 @@ export const seedEvents: LeagueEvent[] = [
   { type: "team", id: "red-foxes", name: "Red Foxes" },
   { type: "team", id: "dockside-fc", name: "Dockside FC" },
   { type: "team", id: "northside-athletic", name: "Northside Athletic" },
-  { type: "team", id: "green-lanes", name: "Green Lanes" },
+  { type: "team", id: "harbour-ac", name: "Harbour AC" },
   {
     type: "fixture",
     id: "fx-1",
@@ -24,7 +24,7 @@ export const seedEvents: LeagueEvent[] = [
     type: "fixture",
     id: "fx-2",
     home: "northside-athletic",
-    away: "green-lanes",
+    away: "harbour-ac",
     date: now - 4 * hour
   },
   {

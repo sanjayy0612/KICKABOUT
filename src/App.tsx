@@ -159,8 +159,8 @@ export const App = () => {
                   <span className="eyebrow">Next Match</span>
                   <strong>
                     {nextFixture
-                      ? `${standings[0]?.name ?? "Red Foxes"} vs ${
-                          standings[1]?.name ?? "Dockside FC"
+                      ? `${teamNames.get(nextFixture.home) ?? "Red Foxes"} vs ${
+                          teamNames.get(nextFixture.away) ?? "Dockside FC"
                         }`
                       : "League ready"}
                   </strong>
@@ -176,7 +176,13 @@ export const App = () => {
             <p className="eyebrow">Powered By</p>
             <div className="powered-marks" aria-label="Powered by stack">
               <span>Pears</span>
+              <span className="powered-separator" aria-hidden="true">
+                ·
+              </span>
               <span>QVAC</span>
+              <span className="powered-separator" aria-hidden="true">
+                ·
+              </span>
               <span>WDK</span>
             </div>
           </div>
