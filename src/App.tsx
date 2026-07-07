@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LocalEventStore } from "./lib/event-store";
 import { deriveFixtures, deriveStandings } from "./lib/league";
 import type { LeagueEvent } from "./types";
@@ -102,7 +102,22 @@ const jerseyColors = ["07", "11", "04", "23"];
 
 export const App = () => {
   const [store] = useState(() => new LocalEventStore());
-  const [events] = useState<LeagueEvent[]>(() => store.load());
+  const [events, setEvents] = useState<LeagueEvent[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void store.ready().then(() => store.load()).then((loaded) => {
+      if (active) {
+        setEvents(loaded);
+      }
+    });
+    const unsubscribe = store.subscribe(setEvents);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [store]);
+
   const teams = events.filter((event): event is Extract<LeagueEvent, { type: "team" }> => event.type === "team");
   const standings = useMemo(() => deriveStandings(events), [events]);
   const fixtures = useMemo(() => deriveFixtures(events), [events]);

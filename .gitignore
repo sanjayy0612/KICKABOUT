@@ -1,6 +1,7 @@
 node_modules
 dist
 .DS_Store
+.kickabout-data
 *.tsbuildinfo
 FRONTEND.md
 PLAN.md

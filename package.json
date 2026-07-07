@@ -6,7 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "pear:create": "node pear/app.mjs create",
+    "pear:join": "node pear/app.mjs join",
+    "test:p2p": "node scripts/probe-store.mjs"
+  },
+  "pear": {
+    "name": "kickabout",
+    "type": "terminal",
+    "main": "pear/app.mjs"
   },
   "dependencies": {
     "@fontsource/baskervville": "^5.2.9",
