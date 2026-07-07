@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import type { EventStore } from "./lib/event-store";
 import { LocalEventStore } from "./lib/event-store";
+import { BridgeEventStore, type BridgeMeta } from "./lib/bridge-event-store";
 import { deriveFixtures, deriveStandings } from "./lib/league";
 import type { LeagueEvent } from "./types";
+
+type SyncMode = "connecting" | "p2p" | "local";
 
 const formatDate = (value: number) =>
   new Intl.DateTimeFormat("en", {
@@ -101,29 +105,118 @@ const stackBlocks = [
 const jerseyColors = ["07", "11", "04", "23"];
 
 export const App = () => {
-  const [store] = useState(() => new LocalEventStore());
+  const [store, setStore] = useState<EventStore | null>(null);
   const [events, setEvents] = useState<LeagueEvent[]>([]);
+  const [mode, setMode] = useState<SyncMode>("connecting");
+  const [meta, setMeta] = useState<BridgeMeta | null>(null);
 
   useEffect(() => {
     let active = true;
-    void store.ready().then(() => store.load()).then((loaded) => {
-      if (active) {
-        setEvents(loaded);
+    let cleanup: (() => void) | null = null;
+
+    (async () => {
+      // Prefer the real peer node via the local bridge; fall back to a local
+      // in-browser demo store if the bridge isn't running.
+      let resolved: EventStore;
+      const unsubs: Array<() => void> = [];
+      try {
+        const bridge = await BridgeEventStore.connect();
+        resolved = bridge;
+        if (active) setMode("p2p");
+        unsubs.push(bridge.subscribeMeta((next) => active && setMeta(next)));
+      } catch {
+        resolved = new LocalEventStore();
+        if (active) setMode("local");
       }
-    });
-    const unsubscribe = store.subscribe(setEvents);
+
+      if (!active) {
+        await resolved.close();
+        return;
+      }
+
+      setStore(resolved);
+      await resolved.ready();
+      const loaded = await resolved.load();
+      if (active) setEvents(loaded);
+      unsubs.push(resolved.subscribe((next) => active && setEvents(next)));
+
+      cleanup = () => {
+        for (const off of unsubs) off();
+        void resolved.close();
+      };
+    })();
+
     return () => {
       active = false;
-      unsubscribe();
+      cleanup?.();
     };
-  }, [store]);
+  }, []);
 
   const teams = events.filter((event): event is Extract<LeagueEvent, { type: "team" }> => event.type === "team");
   const standings = useMemo(() => deriveStandings(events), [events]);
   const fixtures = useMemo(() => deriveFixtures(events), [events]);
   const nextFixture = fixtures.find((fixture) => !fixture.result) ?? fixtures[0];
-  const syncedPeers = 3;
+  const pendingFixtures = fixtures.filter((fixture) => !fixture.result);
   const teamNames = new Map(teams.map((team) => [team.id, team.name]));
+
+  const canWrite = mode === "p2p" ? Boolean(meta?.writable) : mode === "local";
+  const syncLabel =
+    mode === "connecting"
+      ? "Connecting…"
+      : mode === "p2p"
+        ? meta?.writable
+          ? "Live P2P · writable"
+          : "Live P2P · read-only"
+        : "Local demo mode";
+  const inviteLink =
+    mode === "p2p" && meta?.invite
+      ? `pear://kickabout/${meta.invite}`
+      : "pear://kickabout/floodlights-sunday-league";
+
+  const [resultFixtureId, setResultFixtureId] = useState("");
+  const [homeGoals, setHomeGoals] = useState("");
+  const [awayGoals, setAwayGoals] = useState("");
+
+  const postResult = async (submitEvent: FormEvent) => {
+    submitEvent.preventDefault();
+    if (!store || !resultFixtureId) {
+      return;
+    }
+    await store.append({
+      type: "result",
+      fixtureId: resultFixtureId,
+      homeGoals: Number(homeGoals || 0),
+      awayGoals: Number(awayGoals || 0),
+      recordedAt: Date.now()
+    });
+    setResultFixtureId("");
+    setHomeGoals("");
+    setAwayGoals("");
+  };
+
+  const describeEvent = (event: LeagueEvent): { kind: string; detail: string } => {
+    switch (event.type) {
+      case "league":
+        return { kind: "League", detail: `${event.name} created` };
+      case "team":
+        return { kind: "Team", detail: event.name };
+      case "fixture":
+        return {
+          kind: "Fixture",
+          detail: `${teamNames.get(event.home) ?? event.home} v ${teamNames.get(event.away) ?? event.away}`
+        };
+      case "result": {
+        const fixture = fixtures.find((item) => item.id === event.fixtureId);
+        const home = fixture ? teamNames.get(fixture.home) ?? fixture.home : event.fixtureId;
+        const away = fixture ? teamNames.get(fixture.away) ?? fixture.away : "";
+        return { kind: "Result", detail: `${home} ${event.homeGoals}–${event.awayGoals} ${away}` };
+      }
+      case "payment":
+        return { kind: "Payment", detail: `${event.from} · ${event.amount} USDt` };
+      default:
+        return { kind: "Event", detail: "" };
+    }
+  };
 
   return (
     <div className="page">
@@ -305,7 +398,7 @@ export const App = () => {
                     <p className="eyebrow">Standings</p>
                     <h3>Table</h3>
                   </div>
-                  <span className="sync-pill">Synced with {syncedPeers} peers</span>
+                  <span className="sync-pill">{syncLabel}</span>
                 </div>
                 <div className="table-scroll">
                   <table className="standings-table">
@@ -367,6 +460,52 @@ export const App = () => {
                     </article>
                   ))}
                 </div>
+                <form className="post-result" onSubmit={postResult}>
+                  <p className="field-label">Post a result {canWrite ? "" : "(read-only peer)"}</p>
+                  <div className="post-result-row">
+                    <select
+                      aria-label="Fixture"
+                      value={resultFixtureId}
+                      onChange={(event) => setResultFixtureId(event.target.value)}
+                      disabled={!canWrite || pendingFixtures.length === 0}
+                    >
+                      <option value="">
+                        {pendingFixtures.length === 0 ? "No pending fixtures" : "Select fixture"}
+                      </option>
+                      {pendingFixtures.map((fixture) => (
+                        <option key={fixture.id} value={fixture.id}>
+                          {teamNames.get(fixture.home) ?? fixture.home} v{" "}
+                          {teamNames.get(fixture.away) ?? fixture.away}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label="Home goals"
+                      type="number"
+                      min="0"
+                      placeholder="H"
+                      value={homeGoals}
+                      onChange={(event) => setHomeGoals(event.target.value)}
+                      disabled={!canWrite}
+                    />
+                    <input
+                      aria-label="Away goals"
+                      type="number"
+                      min="0"
+                      placeholder="A"
+                      value={awayGoals}
+                      onChange={(event) => setAwayGoals(event.target.value)}
+                      disabled={!canWrite}
+                    />
+                    <button
+                      className="button button-primary"
+                      type="submit"
+                      disabled={!canWrite || !resultFixtureId}
+                    >
+                      Post
+                    </button>
+                  </div>
+                </form>
               </section>
 
               <section className="app-panel">
@@ -407,6 +546,41 @@ export const App = () => {
               <section className="app-panel app-panel-wide">
                 <div className="app-panel-header">
                   <div>
+                    <p className="eyebrow">Event Log</p>
+                    <h3>Every action, synced peer-to-peer</h3>
+                  </div>
+                  <span className="offline-badge">{events.length} events</span>
+                </div>
+                <div className="table-scroll">
+                  <table className="standings-table log-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Type</th>
+                        <th>Detail</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...events].reverse().map((event, index) => {
+                        const { kind, detail } = describeEvent(event);
+                        return (
+                          <tr key={events.length - index}>
+                            <td>{events.length - index}</td>
+                            <td>
+                              <span className="log-kind">{kind}</span>
+                            </td>
+                            <td>{detail}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="app-panel app-panel-wide">
+                <div className="app-panel-header">
+                  <div>
                     <p className="eyebrow">Create / Join League</p>
                     <h3>Shareable entry</h3>
                   </div>
@@ -422,11 +596,7 @@ export const App = () => {
                     <label className="field-label" htmlFor="league-link">
                       pear:// link
                     </label>
-                    <input
-                      id="league-link"
-                      value="pear://kickabout/floodlights-sunday-league"
-                      readOnly
-                    />
+                    <input id="league-link" value={inviteLink} readOnly />
                   </div>
                 </div>
               </section>

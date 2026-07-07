@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "pear:create": "node pear/app.mjs create",
     "pear:join": "node pear/app.mjs join",
+    "bridge": "node pear/bridge.mjs",
     "test:p2p": "node scripts/probe-store.mjs"
   },
   "pear": {
@@ -26,7 +27,8 @@
     "hypercore-crypto": "^3.7.0",
     "hyperswarm": "^4.17.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
