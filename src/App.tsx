@@ -106,6 +106,7 @@ const jerseyColors = ["07", "11", "04", "23"];
 
 export const App = () => {
   const [store, setStore] = useState<EventStore | null>(null);
+  const [bridge, setBridge] = useState<BridgeEventStore | null>(null);
   const [events, setEvents] = useState<LeagueEvent[]>([]);
   const [mode, setMode] = useState<SyncMode>("connecting");
   const [meta, setMeta] = useState<BridgeMeta | null>(null);
@@ -116,14 +117,22 @@ export const App = () => {
 
     (async () => {
       // Prefer the real peer node via the local bridge; fall back to a local
-      // in-browser demo store if the bridge isn't running.
+      // in-browser demo store if the bridge isn't running. The bridge URL can be
+      // overridden with ?bridge=ws://localhost:8788 so two browser tabs on the
+      // same machine can each point at a different local peer for testing.
+      const bridgeUrlOverride = new URLSearchParams(window.location.search).get("bridge");
       let resolved: EventStore;
       const unsubs: Array<() => void> = [];
       try {
-        const bridge = await BridgeEventStore.connect();
-        resolved = bridge;
-        if (active) setMode("p2p");
-        unsubs.push(bridge.subscribeMeta((next) => active && setMeta(next)));
+        const connected = bridgeUrlOverride
+          ? await BridgeEventStore.connect(bridgeUrlOverride)
+          : await BridgeEventStore.connect();
+        resolved = connected;
+        if (active) {
+          setMode("p2p");
+          setBridge(connected);
+        }
+        unsubs.push(connected.subscribeMeta((next) => active && setMeta(next)));
       } catch {
         resolved = new LocalEventStore();
         if (active) setMode("local");
@@ -176,6 +185,16 @@ export const App = () => {
   const [resultFixtureId, setResultFixtureId] = useState("");
   const [homeGoals, setHomeGoals] = useState("");
   const [awayGoals, setAwayGoals] = useState("");
+  const [approveKey, setApproveKey] = useState("");
+
+  const approveWriter = async (submitEvent: FormEvent) => {
+    submitEvent.preventDefault();
+    if (!bridge || !approveKey.trim()) {
+      return;
+    }
+    await bridge.addWriter(approveKey.trim());
+    setApproveKey("");
+  };
 
   const postResult = async (submitEvent: FormEvent) => {
     submitEvent.preventDefault();
@@ -598,6 +617,32 @@ export const App = () => {
                     </label>
                     <input id="league-link" value={inviteLink} readOnly />
                   </div>
+                  {mode === "p2p" && (
+                    <div>
+                      <label className="field-label" htmlFor="writer-key">
+                        Your writer key {meta?.writable ? "(organizer)" : "(share with organizer to get write access)"}
+                      </label>
+                      <input id="writer-key" value={meta?.me ?? ""} readOnly />
+                    </div>
+                  )}
+                  {mode === "p2p" && meta?.writable && (
+                    <form className="post-result" onSubmit={approveWriter}>
+                      <label className="field-label" htmlFor="approve-key">
+                        Approve a peer's writer key
+                      </label>
+                      <div className="post-result-row">
+                        <input
+                          id="approve-key"
+                          placeholder="paste a joining peer's writer key"
+                          value={approveKey}
+                          onChange={(event) => setApproveKey(event.target.value)}
+                        />
+                        <button className="button button-primary" type="submit" disabled={!approveKey.trim()}>
+                          Approve
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </section>
             </div>
